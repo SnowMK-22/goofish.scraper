@@ -69,11 +69,6 @@ def _get_session_cookies() -> dict:
         "cna": "/bgsItPJSxUCAbMhcDJdVjDR",
     }
 
-
-# =================================================================
-# SCRAPING: INTENTO 1 — HTML
-# =================================================================
-
 def _fetch_via_html(item_id: str, url: str) -> Optional[dict]:
     try:
         with _make_client(use_proxy=True) as client:
