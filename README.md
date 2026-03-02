@@ -1,6 +1,6 @@
 # Goofish Scraping API
 
-Microservicio en **FastAPI** para extraer información detallada de productos de [Goofish (闲鱼)](https://www.goofish.com), el marketplace de segunda mano de Alibaba.
+Microservicio en **FastAPI** para extraer información detallada de productos de [Goofish (闲鱼)](https://www.goofish.com).
 
 ---
 
@@ -119,9 +119,6 @@ Las credenciales del proxy NetNut se configuran en `scraping.py`:
 PROXY_URL = "http://codify-dc-any:58ADAB79s03h8TJ@gw.netnut.net:5959"
 ```
 
-> ⚠️ Antes de usar el proxy, envía un correo a `info@iceberg-data.com`
-> indicando el volumen estimado en GBs, los dominios a visitar y tu IP pública.
-
 ---
 
 ## Configuración de cookies (autenticación)
@@ -129,9 +126,8 @@ PROXY_URL = "http://codify-dc-any:58ADAB79s03h8TJ@gw.netnut.net:5959"
 Goofish requiere cookies de sesión válidas. Para obtenerlas:
 
 1. Abre [goofish.com](https://www.goofish.com) en Chrome.
-2. Inicia sesión con tu cuenta.
-3. Abre DevTools → Application → Cookies → `www.goofish.com`.
-4. Copia los valores de `_m_h5_tk`, `_m_h5_tk_enc`, `cna`, `unb`.
+2. Abre DevTools → Application → Cookies → `www.goofish.com`.
+4. Copia los valores de `_m_h5_tk`, `_m_h5_tk_enc`, `cna`.
 5. Pégalos en la función `_get_session_cookies()` en `scraping.py`.
 
 ---
