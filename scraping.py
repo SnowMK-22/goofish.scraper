@@ -6,12 +6,14 @@ import time
 import logging
 from typing import Optional
 from urllib.parse import urlparse, parse_qs
+import random
+import string
 
 import httpx
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
-PROXY_URL = "http://codify-dc-any:58ADAB79s03h8TJ@gw.netnut.net:5959"
+PROXY_URL = "http://cust_Rt2LUU9_Szrr8Q0-type-dc:33gsAvQeF0Jr8YWHKCuHj4pI@vip.codalyx.com:3128"
 APP_KEY = "34839810"
 API_HOST = "https://h5api.m.goofish.com"
 API_PATH = "/h5/mtop.taobao.idle.pc.detail/1.0/"
@@ -34,10 +36,11 @@ DISK_CACHE_PATH = "goofish_cache"
 
 def _make_client(use_proxy: bool = True) -> httpx.Client:
     if use_proxy:
-        transport = httpx.HTTPTransport(proxy=PROXY_URL)
+        session_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+        proxy = f"http://cust_Rt2LUU9_Szrr8Q0-type-dc-session-{session_id}:33gsAvQeF0Jr8YWHKCuHj4pI@vip.codalyx.com:3128"
+        transport = httpx.HTTPTransport(proxy=proxy)
         return httpx.Client(transport=transport, timeout=25, follow_redirects=True)
-    return httpx.Client(timeout=25, follow_redirects=True)
-
+    return httpx.Client(timeout=25, follow_redirects=True, trust_env=False)
 
 def _extract_item_id(url: str) -> Optional[str]:
     parsed = urlparse(url)
@@ -62,12 +65,42 @@ def _build_sign(token: str, timestamp: str, app_key: str, payload: str) -> str:
     return hashlib.md5(raw.encode("utf-8")).hexdigest()
 
 
+_cached_cookies: dict = {}
+
+def _refresh_cookies() -> dict:
+    """Obtiene cookies frescas abriendo un navegador headless real."""
+    global _cached_cookies
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36",
+                locale="zh-CN",
+            )
+            page = context.new_page()
+            page.goto("https://www.goofish.com/", wait_until="networkidle", timeout=30000)
+            cookies = {c["name"]: c["value"] for c in context.cookies()}
+            browser.close()
+            _cached_cookies = cookies
+            logger.info(f"[COOKIES] Obtenidas {len(cookies)} cookies: {list(cookies.keys())}")
+            return cookies
+    except Exception as e:
+        logger.error(f"[COOKIES] Error obteniendo cookies: {e}")
+        return {}
+
 def _get_session_cookies() -> dict:
-    return {
-        "_m_h5_tk": "4533a95c718cee2bd33f46d19d5aca3a_1772488778725",
-        "_m_h5_tk_enc": "907f9eef324805274a82fe8b42585cbc",
-        "cna": "/bgsItPJSxUCAbMhcDJdVjDR",
-    }
+    global _cached_cookies
+    tk = _cached_cookies.get("_m_h5_tk", "")
+    if not tk:
+        return _refresh_cookies()
+    try:
+        ts = int(tk.rsplit("_", 1)[1])
+        if (time.time() * 1000 - ts) > 20 * 60 * 1000:
+            return _refresh_cookies()
+    except Exception:
+        return _refresh_cookies()
+    return _cached_cookies
 
 def _fetch_via_html(item_id: str, url: str) -> Optional[dict]:
     try:
@@ -118,6 +151,44 @@ def _fetch_via_html(item_id: str, url: str) -> Optional[dict]:
         return None
     except Exception as e:
         logger.error(f"[HTML] Error para item_id={item_id}: {e}")
+        return None
+
+def _fetch_via_playwright(item_id: str, url: str) -> Optional[dict]:
+    """Visita la página con Playwright e intercepta la respuesta de la API interna."""
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                user_agent=BASE_HEADERS["user-agent"],
+                locale="zh-CN",
+            )
+            page = context.new_page()
+
+            api_data = {}
+
+            def handle_response(response):
+                if "mtop.taobao.idle.pc.detail" in response.url:
+                    try:
+                        data = response.json()
+                        if any("SUCCESS" in r for r in data.get("ret", [])):
+                            api_data.update(data.get("data", {}))
+                    except Exception:
+                        pass
+
+            page.on("response", handle_response)
+            page.goto(url, wait_until="networkidle", timeout=30000)
+            browser.close()
+
+            if api_data:
+                logger.info(f"[PW] Datos interceptados para item_id={item_id}")
+                return api_data
+
+            logger.warning(f"[PW] No se interceptaron datos para item_id={item_id}")
+            return None
+
+    except Exception as e:
+        logger.error(f"[PW] Error para item_id={item_id}: {e}")
         return None
 
 def _fetch_via_api(item_id: str) -> Optional[dict]:
@@ -269,11 +340,15 @@ def scrape_pdp(url: str) -> list:
     except Exception as e:
         logger.warning(f"[CACHE] Error leyendo disco: {e}")
 
-    raw_data = _fetch_via_html(item_id, url)
+    # raw_data = _fetch_via_html(item_id, url)
+    raw_data = _fetch_via_playwright(item_id, url)
 
     if isinstance(raw_data, dict) and raw_data.get("_not_found"):
         _memory_cache[item_id] = []
         return []
+
+    if not raw_data:
+        raw_data = _fetch_via_html(item_id, url)
 
     if not raw_data:
         logger.info(f"[FALLBACK] Usando API interna para item_id={item_id}")
